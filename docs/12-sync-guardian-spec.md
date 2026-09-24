@@ -112,15 +112,6 @@ class SyncGuardianCaseInput(BaseModel):
     crosswalk: dict[str, str]          # {"PLM": ..., "ERP": ..., "MES": ...}
     golden_record_before: dict         # entity state prior to this change
     prior_findings: list[Finding]      # from other agents already in this case
-    similar_past_cases: list[SimilarCase]  # top 2-3, via cases.search_similar
-                                            # — outcomes (approved/rejected) of
-                                            # past runs on similar situations
-
-class SimilarCase(BaseModel):
-    case_id: str
-    issue: str
-    resolution: str
-    approved: bool
 ```
 
 Example, filled in for the bracket scenario:
@@ -140,27 +131,44 @@ Example, filled in for the bracket scenario:
   },
   "crosswalk": { "PLM": "BRK-10442", "ERP": "50010442", "MES": "BRK-10442" },
   "golden_record_before": { "material_spec": "AMS 4027", "revision": "B" },
-  "prior_findings": [],
-  "similar_past_cases": [
-    { "case_id": "ECN-1904", "issue": "missing mapping for AMS 4622",
-      "resolution": "added mapping row", "approved": true }
-  ]
+  "prior_findings": []
 }
 ```
 
-**No dry-run result here — that's deliberate.** An earlier version of this
-spec had the pipeline pre-run the dry run at draft time and hand the result
-in as part of this payload. That's the wrong owner for it: "will this
-propagate correctly" is Sync Guardian's question, and the dry run is the
-mechanism that answers it, so the agent should be the one deciding when and
-against which targets to run it — not receiving a pre-computed answer from
-outside. It also means `pipeline.dry_run` shows up honestly in the agent's
-*own* tool-call trajectory (see §2.3, §6.2), instead of a check that ran
-somewhere else being handed in as if it were data. Concretely: Sync Guardian
-reads the route map (Bucket 1) to know which targets this entity type syncs
-to, then calls `pipeline.dry_run` itself for each one that's relevant to the
-changed attribute — it does not blindly dry-run every declared target
-regardless of what changed.
+**Only four fields now, and each earns its place by the same test:** does
+more than one agent running on this case need it, and is there one correct
+answer regardless of who's asking? `crosswalk` and `golden_record_before`
+pass both — they're plain facts about the entity, identical no matter which
+specialist looks them up, so the case builder resolves them once and every
+agent in the case gets the same values. `prior_findings` passes too: it's
+genuinely shared, accumulating case state — whatever an earlier agent found
+in this case, every agent after it should see.
+
+**No dry-run result, and no `similar_past_cases`, here — both deliberately
+removed.** Both used to be pre-fetched by the case builder; both fail the
+second half of the test.
+
+- `pipeline.dry_run`: "will this propagate correctly" is Sync Guardian's
+  question, and the dry run is the mechanism that answers it — which
+  targets to check and with what proposed values is the agent's own
+  judgment call, not a fact with one right answer. It also means
+  `pipeline.dry_run` now shows up honestly in the agent's *own* tool-call
+  trajectory (see §2.3, §6.2) instead of a check that ran somewhere else
+  being handed in as if it were data.
+- `cases.search_similar`: this is a search, not a lookup — its result
+  depends entirely on the query text, and different agents on the same
+  case ask it different questions (Sync Guardian: "has this mapping-gap
+  problem happened before?"; Change Impact: "has a revision change
+  stranded this much stock before?"). A single case-builder-run search
+  can't serve both, so each agent runs its own, with its own query, as
+  part of its own reasoning — see §2.3.
+
+Concretely: Sync Guardian reads the route map (Bucket 1) to know which
+targets this entity type syncs to, calls `pipeline.dry_run` itself for
+each target relevant to the changed attribute, and — once it knows the
+actual failure category — calls `cases.search_similar` with a query
+informed by that diagnosis rather than a generic guess made before any
+investigation happened.
 
 ### 2.3 Bucket 2 — tools the agent calls itself, mid-reasoning
 
@@ -183,7 +191,7 @@ fix-proposal actually happen.
 | `pipeline.dry_run` (re-called, simulate-before-propose) | **validate a candidate fix before proposing it** — simulate as if `AMS 4911 -> MG-TI64` already existed | `pipeline.dry_run(entity="BRK-10442", target="ERP", proposed_attributes={"material_spec":"AMS 4911"}, assume_mapping={"AMS 4911":"MG-TI64"})` | `{"result": "PASS"}` |
 | `mdm.get_golden_record` | re-check current state if the case has been open a while | as in 2.2 of the prior conversation | current entity snapshot |
 | `mdm.get_crosswalk` | re-confirm identity mapping if not in the upfront payload (e.g. new entity, no row yet) | `mdm.get_crosswalk(entity="BRK-10442")` | `{"PLM": ..., "ERP": ..., "MES": ...}` |
-| `cases.search_similar` | look past the 2-3 pre-fetched cases for a closer match | `cases.search_similar(text="missing material group mapping titanium")` | ranked case list |
+| `cases.search_similar` | **called once diagnosis is underway**, with a query framed around what was actually found — not run generically before the agent knows what it's looking for | `cases.search_similar(text="missing material group mapping, PLM to ERP, titanium spec")` | ranked list of `CaseRecord` |
 
 `pipeline.dry_run` now appears **twice in the table because it's called
 twice in a real run**, for two different reasons: first diagnostically
@@ -195,6 +203,31 @@ that comes back PASS. This turns "I think this might fix it" into "I
 confirmed this fixes it" — raises confidence, and gives the steward a
 stronger basis to approve. Both calls belong to the agent; neither is
 pre-computed for it.
+
+**What `cases.search_similar` actually returns:**
+
+```python
+class CaseRecord(BaseModel):
+    case_id: str
+    entity_type: str          # "Part", "Material", "WorkOrder", ...
+    failure_category: str     # from the failure taxonomy
+    changed_attribute: str    # "material_spec", "base_unit", ...
+    source_system: str
+    target_system: str
+    issue_summary: str        # the text actually embedded for similarity search
+    resolution: str           # what was done, e.g. "added mapping row AMS 4622 -> MG-TI64"
+    steward_decision: Literal["approved", "rejected"]
+```
+
+One shared corpus across all four agents — every case that closes, from
+any specialist, becomes a record — but each agent's query only surfaces
+the slice relevant to its own question. Similarity here is deliberately
+fuzzy on the specific value (a titanium-spec mapping gap should surface a
+*different* titanium-spec mapping gap) but should weight failure category,
+changed attribute, and system pair heavily — the opposite of
+`mapping.lookup`, where a near-miss on the value would be actively
+dangerous (see [05-context-and-data.md](05-context-and-data.md), "why not
+put mappings in RAG").
 
 ---
 
@@ -227,6 +260,7 @@ Filled example:
         "pipeline.dry_run(ERP) -> FAIL, missing mapping for MATKL",
         "mapping.lookup(AMS 4911, ERP) -> not found",
         "mapping.find_similar -> MG-TI64 (titanium bar stock)",
+        "cases.search_similar('missing material group mapping, PLM to ERP, titanium spec') -> ECN-1904, same fix pattern, approved",
         "pipeline.dry_run(ERP, assume_mapping=AMS 4911->MG-TI64) -> PASS"
       ],
       "confidence": 0.94
@@ -270,9 +304,6 @@ Crosswalk: PLM=BRK-10442, ERP=50010442, MES=BRK-10442.
 
 Golden record before: material_spec=AMS 4027, revision=B.
 
-Similar past cases:
-  ECN-1904: missing mapping for AMS 4622 -> added mapping row (approved)
-
 No prior findings from other agents yet in this case.
 
 Check whether this change will sync correctly to every target the route
@@ -282,9 +313,12 @@ fix if one is warranted.
 
 **Turns 2..n:** standard tool-call / tool-result exchanges as the agent
 works through §2.3 — starting with its own `pipeline.dry_run` calls against
-the targets the route map names, since no dry-run result is given upfront —
-ending with a final assistant turn constrained (via structured output /
-forced tool call) to `SyncGuardianOutput`.
+the targets the route map names (no dry-run result is given upfront),
+followed by `mapping.lookup` / `mapping.find_similar` to diagnose a
+failure, then `cases.search_similar` once there's an actual failure
+category to search for rather than just the raw event — ending with a
+final assistant turn constrained (via structured output / forced tool
+call) to `SyncGuardianOutput`.
 
 ---
 
@@ -365,7 +399,7 @@ every real case's steward decision, logged automatically as a new example.
 ```python
 class SyncGuardianEvalCase(BaseModel):
     case_input: SyncGuardianCaseInput
-    expected_trajectory: list[str]        # tool names, e.g. ["mapping.lookup", "mapping.find_similar", "pipeline.dry_run"]
+    expected_trajectory: list[str]        # tool names, e.g. ["pipeline.dry_run", "mapping.lookup", "mapping.find_similar", "cases.search_similar", "pipeline.dry_run"]
     expected_root_cause: str              # from the failure taxonomy
     expected_action: ProposedAction | None
     steward_decision: Literal["approved", "rejected"] | None
