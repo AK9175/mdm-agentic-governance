@@ -47,6 +47,7 @@ risky.
 | [09-worked-example.md](docs/09-worked-example.md) | The bracket rev B → rev C change, end to end |
 | [10-design-decisions-and-tradeoffs.md](docs/10-design-decisions-and-tradeoffs.md) | Honest trade-offs: is LangGraph needed, rules vs agents, etc. |
 | [11-open-questions.md](docs/11-open-questions.md) | Things worth a second opinion |
+| [12-sync-guardian-spec.md](docs/12-sync-guardian-spec.md) | Sync Guardian in full: every input/schema, prompts, tool catalogue, and its harness |
 | [prototype/](prototype/) | A runnable LangGraph mini-version on mocked systems |
 
 ## A note on scope and honesty
