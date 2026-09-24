@@ -102,8 +102,8 @@ OUTPUT CONTRACT
 ### 2.2 Bucket 3 (upfront) — what the case builder hands the agent before it reasons
 
 The supervisor's case builder assembles this automatically — no LLM call
-needed to produce it, since it's either off the trigger event or cheap
-deterministic lookups the pipeline already does at draft time.
+needed to produce it, since it's either off the trigger event or a cheap
+lookup the MDM hub already serves.
 
 ```python
 class SyncGuardianCaseInput(BaseModel):
@@ -111,18 +111,10 @@ class SyncGuardianCaseInput(BaseModel):
     event: dict                        # the triggering event, verbatim
     crosswalk: dict[str, str]          # {"PLM": ..., "ERP": ..., "MES": ...}
     golden_record_before: dict         # entity state prior to this change
-    dry_run_results: list[DryRunResult]  # pre-run by the pipeline at draft time,
-                                          # against every target the route map
-                                          # says this entity type syncs to
     prior_findings: list[Finding]      # from other agents already in this case
     similar_past_cases: list[SimilarCase]  # top 2-3, via cases.search_similar
-
-class DryRunResult(BaseModel):
-    target: str                        # "ERP" | "MES" | ...
-    result: Literal["PASS", "FAIL"]
-    reason: str | None
-    field: str | None
-    value: str | None
+                                            # — outcomes (approved/rejected) of
+                                            # past runs on similar situations
 
 class SimilarCase(BaseModel):
     case_id: str
@@ -148,10 +140,6 @@ Example, filled in for the bracket scenario:
   },
   "crosswalk": { "PLM": "BRK-10442", "ERP": "50010442", "MES": "BRK-10442" },
   "golden_record_before": { "material_spec": "AMS 4027", "revision": "B" },
-  "dry_run_results": [
-    { "target": "ERP", "result": "FAIL", "reason": "missing mapping", "field": "MATKL", "value": "AMS 4911" },
-    { "target": "MES", "result": "PASS", "reason": null, "field": null, "value": null }
-  ],
   "prior_findings": [],
   "similar_past_cases": [
     { "case_id": "ECN-1904", "issue": "missing mapping for AMS 4622",
@@ -160,12 +148,19 @@ Example, filled in for the bracket scenario:
 }
 ```
 
-**Why pre-run the dry run instead of letting the agent call it?** It's cheap,
-deterministic, and needed for every case of this event type regardless of
-what the agent decides to investigate — running it once at draft time (and
-handing the result in) avoids every agent invocation re-triggering the same
-check. The agent can still call `pipeline.dry_run` itself, live, for a
-scenario the pre-run didn't cover (see 2.3).
+**No dry-run result here — that's deliberate.** An earlier version of this
+spec had the pipeline pre-run the dry run at draft time and hand the result
+in as part of this payload. That's the wrong owner for it: "will this
+propagate correctly" is Sync Guardian's question, and the dry run is the
+mechanism that answers it, so the agent should be the one deciding when and
+against which targets to run it — not receiving a pre-computed answer from
+outside. It also means `pipeline.dry_run` shows up honestly in the agent's
+*own* tool-call trajectory (see §2.3, §6.2), instead of a check that ran
+somewhere else being handed in as if it were data. Concretely: Sync Guardian
+reads the route map (Bucket 1) to know which targets this entity type syncs
+to, then calls `pipeline.dry_run` itself for each one that's relevant to the
+changed attribute — it does not blindly dry-run every declared target
+regardless of what changed.
 
 ### 2.3 Bucket 2 — tools the agent calls itself, mid-reasoning
 
@@ -176,6 +171,7 @@ fix-proposal actually happen.
 
 | Tool | Called because | Example call | Example result |
 |---|---|---|---|
+| `pipeline.dry_run` (diagnostic) | **first call, always** — the route map (Bucket 1) says Part/revision changes sync PLM→ERP and PLM→MES; the agent dry-runs each | `pipeline.dry_run(entity="BRK-10442", target="ERP", proposed_attributes={"material_spec":"AMS 4911"})` | `{"result": "FAIL", "reason": "missing mapping", "field": "MATKL"}` |
 | `mapping.lookup` | dry run failed with "missing mapping" — confirm and get exact field | `mapping.lookup(attribute="material_spec", source_system="PLM", source_value="AMS 4911", target_system="ERP")` | `{"found": false, "target_field": "MATKL"}` |
 | `mapping.find_similar` | no exact row — is there a plausible fix | `mapping.find_similar("AMS 4911")` | `{"suggestions": [{"value": "MG-TI64", "reason": "titanium bar stock, same family"}]}` |
 | `schema.describe` | confirm the failing field's ownership/requiredness | `schema.describe(entity="Material", field="material_group")` | field def with per-system technical names |
@@ -184,17 +180,21 @@ fix-proposal actually happen.
 | `pipeline.pending_messages` | check nothing's already queued/stuck for this entity | `pipeline.pending_messages(entity="BRK-10442")` | `{"pending": []}` |
 | `pipeline.get_message` | inspect a specific stuck message in detail | `pipeline.get_message(id="MSG-88213")` | full message payload + error |
 | `pipeline.find_similar_failures` | broaden beyond the 2-3 pre-fetched similar cases if needed | `pipeline.find_similar_failures(reason="missing mapping", entity_type="Material")` | list of past failure records |
-| `pipeline.dry_run` (re-called) | **validate a candidate fix before proposing it** — simulate as if `AMS 4911 -> MG-TI64` already existed | `pipeline.dry_run(entity="BRK-10442", target="ERP", proposed_attributes={"material_spec":"AMS 4911"}, assume_mapping={"AMS 4911":"MG-TI64"})` | `{"result": "PASS"}` |
+| `pipeline.dry_run` (re-called, simulate-before-propose) | **validate a candidate fix before proposing it** — simulate as if `AMS 4911 -> MG-TI64` already existed | `pipeline.dry_run(entity="BRK-10442", target="ERP", proposed_attributes={"material_spec":"AMS 4911"}, assume_mapping={"AMS 4911":"MG-TI64"})` | `{"result": "PASS"}` |
 | `mdm.get_golden_record` | re-check current state if the case has been open a while | as in 2.2 of the prior conversation | current entity snapshot |
 | `mdm.get_crosswalk` | re-confirm identity mapping if not in the upfront payload (e.g. new entity, no row yet) | `mdm.get_crosswalk(entity="BRK-10442")` | `{"PLM": ..., "ERP": ..., "MES": ...}` |
 | `cases.search_similar` | look past the 2-3 pre-fetched cases for a closer match | `cases.search_similar(text="missing material group mapping titanium")` | ranked case list |
 
-The **simulate-before-propose** pattern (last `pipeline.dry_run` row) is the
-one worth calling out: instead of just reporting "no mapping exists," Sync
-Guardian re-runs the dry run *as if* its proposed fix were already applied,
-and only proposes the action once that comes back PASS. This turns "I think
-this might fix it" into "I confirmed this fixes it" — raises confidence, and
-gives the steward a stronger basis to approve.
+`pipeline.dry_run` now appears **twice in the table because it's called
+twice in a real run**, for two different reasons: first diagnostically
+(does this pass, and if not, why), then again to validate a fix. The
+**simulate-before-propose** pattern is the second call: instead of just
+reporting "no mapping exists," Sync Guardian re-runs the dry run *as if*
+its proposed fix were already applied, and only proposes the action once
+that comes back PASS. This turns "I think this might fix it" into "I
+confirmed this fixes it" — raises confidence, and gives the steward a
+stronger basis to approve. Both calls belong to the agent; neither is
+pre-computed for it.
 
 ---
 
@@ -270,21 +270,21 @@ Crosswalk: PLM=BRK-10442, ERP=50010442, MES=BRK-10442.
 
 Golden record before: material_spec=AMS 4027, revision=B.
 
-Dry-run results (pre-run at draft time):
-  ERP: FAIL - missing mapping, field MATKL, value AMS 4911
-  MES: PASS
-
 Similar past cases:
   ECN-1904: missing mapping for AMS 4622 -> added mapping row (approved)
 
 No prior findings from other agents yet in this case.
 
-Diagnose the ERP failure and propose a fix if one is warranted.
+Check whether this change will sync correctly to every target the route
+map lists for a Part/revision change, diagnose any failure, and propose a
+fix if one is warranted.
 ```
 
 **Turns 2..n:** standard tool-call / tool-result exchanges as the agent
-works through §2.3, ending with a final assistant turn constrained (via
-structured output / forced tool call) to `SyncGuardianOutput`.
+works through §2.3 — starting with its own `pipeline.dry_run` calls against
+the targets the route map names, since no dry-run result is given upfront —
+ending with a final assistant turn constrained (via structured output /
+forced tool call) to `SyncGuardianOutput`.
 
 ---
 
@@ -372,8 +372,10 @@ class SyncGuardianEvalCase(BaseModel):
 ```
 
 **Component evals** — cheapest, run on every change:
-- Tool selection: did it call `pipeline.dry_run` at all? (skipping it is a
-  hard fail — the taxonomy's whole point is "check before it happens")
+- Tool selection: did it call `pipeline.dry_run` itself, against every
+  target the route map names for this entity type? (skipping it is a hard
+  fail — the taxonomy's whole point is "check before it happens," and
+  there's no fallback now that nothing pre-computes this for it)
 - Argument accuracy: right `entity`, `target`, `attribute` passed to each
   call
 
