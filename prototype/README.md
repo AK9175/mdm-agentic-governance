@@ -19,7 +19,7 @@ python governance_graph.py
 ```
 PAUSED FOR APPROVAL: 3 actions proposed for BRK-10442
   finding: Change Impact: 40 in stock, 1 open PO, 3 work orders on rev B
-  finding: Sync Guardian: ERP dry run fails, no material group for AMS 4911
+  finding: Data Quality: ERP dry run fails, no material group for AMS 4911
   action:  set_effectivity (high) start rev C after WO-7790
   action:  cancel_po (high) PO 4500018832 (60 EA)
   action:  add_mapping (medium) AMS 4911 -> MG-TI64
@@ -34,7 +34,7 @@ RESUMED, decision: approved
 
 - **State + reducers** — parallel agents append findings/actions without clobbering.
 - **Rules-first supervisor** — known event type routed without an LLM.
-- **Parallel specialists** — Change Impact and Sync Guardian run together.
+- **Parallel specialists** — Change Impact and Data Quality run together.
 - **Policy check** — risk decides human-approval vs auto-execute.
 - **Interrupt/resume** — the graph pauses for approval and resumes with a decision.
 - **Gateway** — the only writer; idempotency keys on every action.
@@ -42,7 +42,11 @@ RESUMED, decision: approved
 ## What it deliberately omits
 
 - Real LLM calls, real tools, real MCP servers.
-- The Entity Resolver and Data Quality agents (described in the docs).
+- Entity Resolver's real duplicate-detection logic — it's stubbed as a
+  placeholder here, and the demo event never actually routes to it.
+- Data Quality's broader role — this prototype only exercises its sync-check
+  slice (a dry run against a mapping table), not the continuous drift scans
+  and pattern detection described in the docs.
 - Persistence (`InMemorySaver` here; `PostgresSaver` in the design).
 - The eval harness.
 

@@ -42,16 +42,16 @@ class CaseState(TypedDict, total=False):
 # Supervisor: rules first, LLM only for events no rule covers
 # ---------------------------------------------------------------------------
 ROUTING_RULES = {
-    "change_drafted": ["change_impact", "sync_guardian"],
+    "change_drafted": ["change_impact", "data_quality"],
     "create_requested": ["entity_resolver"],
-    "sync_failed": ["sync_guardian"],
+    "sync_failed": ["data_quality"],
 }
 
 
 def llm_classify(event: dict) -> list[str]:
     # Real system: an LLM with structured output picks the route, e.g.
     #   llm.with_structured_output(Route).invoke(f"Classify this event: {event}")
-    return ["sync_guardian"]
+    return ["data_quality"]
 
 
 def supervisor(state: CaseState):
@@ -82,12 +82,12 @@ def change_impact(state: CaseState):
     }
 
 
-def sync_guardian(state: CaseState):
+def data_quality(state: CaseState):
     spec = state["event"]["new_spec"]
     if spec in MAPPING:  # dry run: same mapping rules the pipeline uses
-        return {"findings": ["Sync Guardian: ERP dry run passes"]}
+        return {"findings": ["Data Quality: ERP dry run passes"]}
     return {
-        "findings": [f"Sync Guardian: ERP dry run fails, no material group for {spec}"],
+        "findings": [f"Data Quality: ERP dry run fails, no material group for {spec}"],
         "actions": [{"action": "add_mapping", "detail": f"{spec} -> MG-TI64", "risk": "medium"}],
     }
 
@@ -130,13 +130,13 @@ def gateway(state: CaseState):
 # ---------------------------------------------------------------------------
 builder = StateGraph(CaseState)
 for name, fn in [("supervisor", supervisor), ("change_impact", change_impact),
-                 ("sync_guardian", sync_guardian), ("entity_resolver", entity_resolver),
+                 ("data_quality", data_quality), ("entity_resolver", entity_resolver),
                  ("proposal", proposal), ("human_approval", human_approval), ("gateway", gateway)]:
     builder.add_node(name, fn)
 
 builder.add_edge(START, "supervisor")
-builder.add_conditional_edges("supervisor", route, ["change_impact", "sync_guardian", "entity_resolver"])
-for agent in ["change_impact", "sync_guardian", "entity_resolver"]:
+builder.add_conditional_edges("supervisor", route, ["change_impact", "data_quality", "entity_resolver"])
+for agent in ["change_impact", "data_quality", "entity_resolver"]:
     builder.add_edge(agent, "proposal")
 builder.add_conditional_edges("proposal", policy, ["human_approval", "gateway"])
 builder.add_edge("human_approval", "gateway")

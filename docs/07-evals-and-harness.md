@@ -34,18 +34,17 @@ to run in CI on every prompt/model/tool change.
 | Agent | Measured | Method |
 |---|---|---|
 | Supervisor | Routing accuracy; correct event→case grouping | Exact match vs labeled cases |
-| Sync Guardian | Tool selection; argument accuracy; root-cause correctness; false-alarm rate | Trajectory match (**subset** mode); root cause vs labeled cause |
 | Change Impact | Recall of affected items; argument accuracy | Set comparison vs labeled impact lists |
 | Entity Resolver | Duplicate detection precision + recall | Labeled duplicate / non-duplicate pairs |
-| Data Quality | Drift detection rate; cleanup-suggestion quality | Seeded drift; LLM-as-judge rubric |
+| Data Quality | Drift detection rate; cleanup-suggestion quality; tool selection, argument accuracy, root-cause correctness and false-alarm rate on its sync-check work | Seeded drift; LLM-as-judge rubric; trajectory match (**subset** mode) and root cause vs labeled cause for sync checks |
 | End to end | Proposal matches steward decision; correct approval path | Replay historical cases through the full graph |
 | Online (prod) | Steward acceptance rate; false-alarm rate; time-to-resolution | LangSmith monitoring on real traffic |
 
 ## Two points worth stressing
 
-1. **Match mode encodes intent.** Sync Guardian uses **subset** matching: calling
-   one extra harmless tool is fine, but *skipping the dry run* is not. Strict
-   ordering would fail on harmless variation.
+1. **Match mode encodes intent.** Data Quality's sync-check trajectory uses
+   **subset** matching: calling one extra harmless tool is fine, but *skipping
+   the dry run* is not. Strict ordering would fail on harmless variation.
 2. **The dataset grows from production.** Every steward approval/rejection becomes
    a new labeled example, so the eval set tracks real cases over time. Seed data
    comes from historical sync-failure logs, known duplicate merges, past change

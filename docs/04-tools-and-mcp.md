@@ -17,10 +17,9 @@ All agent tools are **read-only**. Only the gateway has write tools.
 | Agent | Tools | What they answer |
 |---|---|---|
 | Supervisor | `router.match_rule`, `case.create`, `case.link_events` | Who handles this; is it part of an existing case |
-| Sync Guardian | `pipeline.dry_run`, `pipeline.get_message`, `pipeline.pending_messages`, `pipeline.find_similar_failures`, `mapping.lookup`, `mapping.find_similar`, `schema.diff` | Will this data be accepted; why did a sync fail; has a data model changed |
 | Change Impact | `plm.get_change`, `plm.compare_revisions`, `plm.where_used`, `erp.get_stock`, `erp.get_open_pos`, `erp.get_planned_orders`, `mes.get_open_work_orders`, `mes.get_process_plan`, `mes.get_as_built` | What exists / is in progress on the old revision |
 | Entity Resolver | `mdm.search_similar`, `mdm.compare_records`, `plm.get_item`, `erp.get_plant_extensions`, `mdm.get_merge_history` | Does this already exist; how strong is the evidence |
-| Data Quality | `dq.list_rules`, `dq.run_rule`, `dq.reconcile`, `dq.profile_field`, `mes.get_nonconformances` | Is data correct; has it drifted; are shop-floor issues a pattern |
+| Data Quality | `dq.list_rules`, `dq.run_rule`, `dq.reconcile`, `dq.profile_field`, `mes.get_nonconformances`, `pipeline.dry_run`, `pipeline.get_message`, `pipeline.pending_messages`, `pipeline.find_similar_failures`, `mapping.lookup`, `mapping.find_similar`, `schema.diff` | Is data correct; has it drifted; are shop-floor issues a pattern; will this data be accepted; why did a sync fail; has a data model changed |
 | Gateway (not an agent) | `policy.evaluate`, `gateway.apply`, `gateway.replay`, `gateway.log_decision` | Is this allowed; apply safely; record it |
 
 ### Tool-layer rules

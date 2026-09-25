@@ -28,10 +28,9 @@ Every agent's context is organized as:
 | Agent | Minimum to work | Makes it better |
 |---|---|---|
 | Supervisor | Specialists + their questions, routing rules, case-state schema | Ambiguous-event examples, event-linking rules, second-routing rules |
-| Sync Guardian | Which targets each object syncs to (all directions), how to read dry runs, failure categories | Error→root-cause patterns per system, blast-radius estimation, past failures + fixes |
 | Change Impact | What "depends on a revision" means + which tool answers each | Interchangeability rules, effectivity patterns, lead-time/cost signals |
 | Entity Resolver | What makes two parts the same, match thresholds | False-positive traps, abbreviation dictionary, labeled past merges |
-| Data Quality | The rules it can run, the SoR matrix | Benign vs harmful drift, noisy fields to deprioritize, recurring NCR patterns |
+| Data Quality | The rules it can run, the SoR matrix, which targets each object syncs to (all directions), how to read dry runs, failure categories | Benign vs harmful drift, noisy fields to deprioritize, recurring NCR patterns, error→root-cause patterns per system, blast-radius estimation, past failures + fixes |
 
 Most quality gains come from the "makes it better" column — **worked examples and
 patterns**, not more instructions.
@@ -78,7 +77,7 @@ rows for `AMS 4928` and `AMS 4027` because they look alike, and the agent could
 wrongly conclude a mapping exists. "Is there a row for this value?" needs an exact
 lookup that definitively finds it or doesn't. That's a tool.
 
-## Worked example: Sync Guardian's data buckets
+## Worked example: Data Quality's sync-check data buckets
 
 **Core, in prompt (loaded once):**
 ```
