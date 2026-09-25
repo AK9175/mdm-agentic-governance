@@ -16,7 +16,7 @@ Crosswalk: `BRK-10442` = ERP material `50010442` = MES part `BRK-10442`.
 a case.
 
 **2. Route.** `change_drafted` is a known event → routed by rule to **Change
-Impact** and **Sync Guardian**, in parallel. No LLM call for routing.
+Impact** and **Data Quality**, in parallel. No LLM call for routing.
 
 **3. Change Impact** asks "what depends on rev B?" and finds:
 - `erp.get_stock` → **40 EA** rev B in plant 1000
@@ -28,7 +28,7 @@ Impact** and **Sync Guardian**, in parallel. No LLM call for routing.
 Finding: an immediate switch wastes 40 + 60 brackets; 3 work orders are mid-build;
 instructions need review for titanium.
 
-**4. Sync Guardian** dry-runs rev C:
+**4. Data Quality** dry-runs rev C:
 - `pipeline.dry_run(target=ERP)` → **FAIL**: no material group for AMS 4911
 - `pipeline.dry_run(target=MES)` → **PASS**
 - `pipeline.pending_messages` → nothing stuck
@@ -84,7 +84,7 @@ written, and the decision is saved as an eval example.)
 > new metal. Recommendation: use up the old brackets, cancel the extra order, and
 > start titanium after the current jobs finish.
 
-**Sync Guardian:**
+**Data Quality:**
 > If approved as-is, purchasing and shop-floor systems won't accept the new
 > titanium bracket, because titanium was never set up in those systems and a few
 > required details are missing. Recommendation: add the titanium setup now (a
@@ -95,6 +95,6 @@ written, and the decision is saved as an eval example.)
 - **Duplicate part:** a new titanium bracket is requested in the ERP at another
   plant; Entity Resolver finds it already exists as BRK-10442 rev C and proposes
   reuse + plant extension instead of a new material.
-- **Failed sync:** a MES→ERP posting fails on an undefined unit (KG); Sync
-  Guardian finds the root cause and blast radius; Data Quality finds two more
-  materials with the same gap; the low-risk fix auto-executes.
+- **Failed sync:** a MES→ERP posting fails on an undefined unit (KG); Data
+  Quality finds the root cause and blast radius, and flags two more materials
+  with the same gap; the low-risk fix auto-executes.

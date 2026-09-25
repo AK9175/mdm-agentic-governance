@@ -23,10 +23,9 @@ catch problems **before** they cause drift.
 Instead of waiting for a sync to fail and then cleaning up, agents watch every
 change and answer specific questions before the change is committed:
 
-- **Will this data actually flow correctly into the other systems?** (Sync Guardian)
 - **What existing inventory, orders, and production does this change affect?** (Change Impact)
 - **Does this thing already exist?** (Entity Resolver)
-- **Is this record correct and complete?** (Data Quality)
+- **Is this record correct and complete, and will it sync correctly into the other systems?** (Data Quality)
 
 A supervisor routes each case; agents only ever *propose*; a deterministic
 gateway is the only component that writes, with human approval for anything
@@ -47,7 +46,6 @@ risky.
 | [09-worked-example.md](docs/09-worked-example.md) | The bracket rev B → rev C change, end to end |
 | [10-design-decisions-and-tradeoffs.md](docs/10-design-decisions-and-tradeoffs.md) | Honest trade-offs: is LangGraph needed, rules vs agents, etc. |
 | [11-open-questions.md](docs/11-open-questions.md) | Things worth a second opinion |
-| [12-sync-guardian-spec.md](docs/12-sync-guardian-spec.md) | Sync Guardian in full: every input/schema, prompts, tool catalogue, and its harness |
 | [prototype/](prototype/) | A runnable LangGraph mini-version on mocked systems |
 
 ## A note on scope and honesty

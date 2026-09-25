@@ -60,7 +60,7 @@ compares them against the canonical model on a schedule. When a system upgrade
 adds/changes a field:
 
 - the canonical dictionary is updated,
-- Sync Guardian flags pipeline rules that no longer fit,
+- Data Quality flags pipeline rules that no longer fit,
 - the affected evals rerun.
 
 ## The MDM hub's four assets

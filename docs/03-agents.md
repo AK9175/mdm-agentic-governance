@@ -11,10 +11,19 @@ judgment.
 | Agent | Owns the question | Proactive work | Reactive work | Not its job |
 |---|---|---|---|---|
 | **Supervisor** | What kind of case is this, and who handles it? | Groups related events into one case per entity | Routes failures | Making any data judgment itself |
-| **Sync Guardian** | Will this data propagate correctly, in every direction? | Pre-flight dry run of mappings before release | Root-cause diagnosis of failed syncs, replay proposals | Deciding if two records are duplicates |
 | **Change Impact** | What will this change break downstream? | Impact forecast when a change is drafted | Explaining a failure caused by a change | Approving the change |
 | **Entity Resolver** | Is this the same thing as something that exists? | Search-before-create on new part/material requests | Merge/unmerge proposals, crosswalk repair | Fixing attribute values |
-| **Data Quality** | Is this record correct and complete? | Continuous drift scans, pattern detection | Cleanup suggestions with evidence | Deciding sync timing or routing |
+| **Data Quality** | Is this record correct and complete, and will it sync correctly? | Continuous drift scans, pattern detection, pre-flight dry run of mappings before release | Cleanup suggestions with evidence, root-cause diagnosis of failed syncs, replay proposals | Deciding if two records are duplicates, deciding sync timing or routing |
+
+> **Note on Sync Guardian.** An earlier version of this design had a dedicated
+> Sync Guardian agent owning "will this propagate correctly." It was folded
+> into Data Quality: its core check (a dry run against the pipeline's own
+> mapping logic) is deterministic and doesn't need an LLM for the common,
+> anticipated case — see
+> [10-design-decisions-and-tradeoffs.md](10-design-decisions-and-tradeoffs.md)
+> for the reasoning. Treating a bad sync as one more form of drift Data
+> Quality already watches for was a cleaner fit than keeping a fourth
+> specialist around mainly for its harder, less-anticipated cases.
 
 > **Note on Change Impact vs the resume line.** Earlier framing sometimes folded
 > "change impact" into the other three agents. Treating it as its own agent is a
@@ -29,7 +38,7 @@ judgment.
 - **Each specialist is its own LangGraph subgraph** with its own tools and
   prompts, so it can be versioned, tested, and rolled back independently.
 - **A case can visit several specialists.** A sync failure might turn out to be
-  caused by a duplicate: Sync Guardian hands back to the supervisor, which routes
+  caused by a duplicate: Data Quality hands back to the supervisor, which routes
   to Entity Resolver.
 
 ## The supervisor
@@ -55,12 +64,12 @@ The supervisor also:
                     │ Case builder +  │  rules first, LLM for ambiguity
                     │  supervisor     │
                     └──────┬──────────┘
-        ┌────────────┬─────┴──────┬─────────────┐
-   ┌────┴────┐  ┌────┴────┐  ┌────┴────┐   ┌─────┴────┐
-   │  Sync   │  │ Entity  │  │  Data   │   │  Change  │
-   │ Guardian│  │Resolver │  │ Quality │   │  Impact  │
-   └────┬────┘  └────┬────┘  └────┬────┘   └─────┬────┘
-        └────────────┴─────┬──────┴──────────────┘
+             ┌─────────────┼─────────────┐
+        ┌────┴────┐   ┌────┴────┐   ┌────┴─────┐
+        │ Entity  │   │  Data   │   │  Change  │
+        │Resolver │   │ Quality │   │  Impact  │
+        └────┬────┘   └────┬────┘   └────┬─────┘
+             └─────────────┼──────────────┘
                     ┌──────┴──────────┐
                     │ Proposal +      │  risk tier, confidence, evidence
                     │ policy check    │

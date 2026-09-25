@@ -42,9 +42,9 @@ state):
 
 ```python
 def route(state):
-    return "sync_guardian" if state["event"] == "sync_failed" else "entity_resolver"
+    return "data_quality" if state["event"] == "sync_failed" else "entity_resolver"
 
-g.add_conditional_edges("supervisor", route, ["sync_guardian", "entity_resolver"])
+g.add_conditional_edges("supervisor", route, ["data_quality", "entity_resolver"])
 ```
 
 ### Parallel steps + reducers
@@ -57,7 +57,7 @@ key raise an error):
 findings: Annotated[list[str], operator.add]   # both agents append here
 
 def route(state):
-    return ["change_impact", "sync_guardian"]   # run in parallel
+    return ["change_impact", "data_quality"]   # run in parallel
 ```
 
 ### Pausing for a human
@@ -87,7 +87,7 @@ returns the resumed value instead of pausing. Keep side effects *after* the
 ```python
 from langgraph.types import Command
 def supervisor(state):
-    return Command(update={"routes": ["sync_guardian"]}, goto="sync_guardian")
+    return Command(update={"routes": ["data_quality"]}, goto="data_quality")
 ```
 
 ## Subgraphs
@@ -97,11 +97,11 @@ function call. Each specialist agent is a subgraph: the parent sees one node; th
 agent internally runs its own multi-step logic.
 
 ```python
-def sync_guardian_node(state: CaseState):
-    out = sync_guardian.invoke({"event": state["event"]})
+def data_quality_node(state: CaseState):
+    out = data_quality.invoke({"event": state["event"]})
     return {"findings": out.get("findings", []), "actions": out.get("actions", [])}
 
-builder.add_node("sync_guardian", sync_guardian_node)   # parent sees one node
+builder.add_node("data_quality", data_quality_node)   # parent sees one node
 ```
 
 Why they matter here: they enforce agent **boundaries** (own tools, prompts,
